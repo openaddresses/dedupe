@@ -1,6 +1,6 @@
 ''' Expand duplicate OpenAddresses data to a new GeoJSON file.
 
-Uses libpostal v0.3.4 (https://github.com/openvenues/libpostal) to compare
+Uses simple string matching on number, street, and unit fields to compare
 normalized representations of nearby address records and dedupe them. Matching
 address points will be coalesced into linestring geometries showing connections
 between points.
@@ -9,41 +9,39 @@ Assumes that import.py has already been run, and internally configured with
 bounding boxes near Cupertino, CA. Modify the value of bbox variable to change
 the active area.
 '''
-from postal import expand, parser
-import psycopg2, itertools, pprint, re, networkx, json
+#from postal import expand, parser
+import psycopg2, itertools, pprint, re, networkx, json, hashlib
 
 comma_squash = re.compile(r'\s+,')
 space_squash = re.compile(r'\s\s+')
 
 class Address:
-    def __init__(self, source, hash, lon, lat, address, lang):
-        print('Address:', address)
-        self.address = address
-        self.parses = parsed_expansions(address, lang)
-        print('Parses:', [(p.house_number, p.road) for p in self.parses])
+    def __init__(self, source, hash, lon, lat, number, street, unit, city, district, region, postcode):
+        street_normal = ''.join([token_map.get(s, s) for s in street.lower().split()])
+        print('Address:', (number, street, unit, city, district, region, postcode))
         self.source = source
         self.hash = hash
         self.lon = lon
         self.lat = lat
+
+        self.number = number
+        self.street = street
+        self.street_normal = street_normal
+        self.unit = unit
+        self.city = city
+        self.district = district
+        self.region = region
+        self.postcode = postcode
     
     def matches(self, other):
-        for (p1, p2) in itertools.product(self.parses, other.parses):
-            if not p1.house_number or not p1.road:
-                continue
-            elif not p2.house_number or not p2.road:
-                continue
-            elif p1.house_number == p2.house_number and p1.road == p2.road:
-                return True
-        return False
-
-class Parse:
-    def __init__(self, house_number=None, road=None, city=None, postcode=None, **kwargs):
-        self.house_number = house_number
-        self.road = road
-        self.city = city
-        self.postcode = postcode
-
-EXPAND_KWARGS = dict(lowercase=True, address_components=expand.ADDRESS_HOUSE_NUMBER | expand.ADDRESS_STREET | expand.ADDRESS_UNIT | expand.ADDRESS_LOCALITY)
+        return bool(
+            self.number == other.number
+            and self.street_normal == other.street_normal
+            and self.unit == other.unit
+            )
+    
+    def __str__(self):
+        return self.number + ' ' + self.street + ', ' + self.unit
 
 def parsed_expansions(address, lang):
     '''
@@ -52,52 +50,10 @@ def parsed_expansions(address, lang):
             for expanded
             in expand.expand_address(address, lang, **EXPAND_KWARGS)]
 
-def parsed_overlaps(parse1, parse2):
-    '''
-    
-        >>> parsed_overlaps({'a': 1}, {'a': 1})
-        1.0
-        >>> parsed_overlaps({'a': 1}, {'a': 2})
-        0.0
-        >>> parsed_overlaps({'a': 1}, {'b': 1})
-        0.0
-        >>> parsed_overlaps({'a': 1, 'b': 2}, {'b': 2, 'c': 3})
-        1.0
-        >>> parsed_overlaps({'a': 1, 'b': 2}, {'b': -2, 'c': 3})
-        0.0
-        >>> parsed_overlaps({'a': 1, 'b': 2, 'c': -3}, {'b': 2, 'c': 3})
-        0.5
-    '''
-    keys1, keys2 = set(parse1.keys()), set(parse2.keys())
-    common_keys = keys1 & keys2
-    if len(common_keys) == 0:
-        return 0.
-    matched_keys = [k for k in common_keys if parse1[k] == parse2[k]]
-    return len(matched_keys) / len(common_keys)
-
-addresses = [
-    '20820 BONNY DR, CUPERTINO 95014',
-    '20820 BONNY DR, CUPERTINO 95014-2976',
-    '20820 PEPPER TREE LN, CUPERTINO 95014-2917',
-    '123 24th st., CUPERTINO 95014-2917',
-    '123 twenty-fourth st., CUPERTINO 95014-2917',
-    'ул Каретный Ряд, д 4, строение 7',
-    ]
-
-for address in addresses:
-    expanded = expand.expand_address(address, 'en', **EXPAND_KWARGS)
-    print('ex', address, expanded)
-    for parsed_expansion in parsed_expansions(address, 'en'):
-        print(' pa', address, parsed_expansion.__dict__)
-
-for address in addresses:
-    print('pa', address, parser.parse_address(address, 'en'))
-
-##
-
 bbox = 'POINT (-122.0683 37.2920)', 'POINT (-121.9917 37.3390)'
-bbox = -122.0683, 37.2920, -121.9917, 37.3390
-bbox = -122.04137, 37.31545, -122.03168, 37.32306
+#bbox = -122.04137, 37.31545, -122.03168, 37.32306 # one block in cupertino
+bbox = -122.0683, 37.2920, -121.9917, 37.3390 # all of cupertino
+#bbox = -122.203, 37.200, -121.699, 37.480 # all of the south bay
 
 step = .002
 xs = ((x, x + step*2) for x in itertools.takewhile(lambda x: x < bbox[2], itertools.count(bbox[0], step)))
@@ -114,13 +70,13 @@ with psycopg2.connect('postgres://oa:oa@localhost/oa') as conn:
 
             db.execute('''
                 SELECT source, hash, ST_X(location) as lon, ST_Y(location) as lat,
-                (number||' '||street||' '||unit||', '||city||' '||district||' '||region||' '||postcode) as address
+                       number, street, unit, city, district, region, postcode
                 FROM addresses WHERE location && ST_SetSRID(ST_MakeBox2d(%s, %s), 4326)
-                AND number = '10340' AND street = 'WESTACRES DR'
+              --  AND number = '10340' AND street = 'WESTACRES DR'
+                AND number != '' AND street != ''
                 ''', (p1, p2))
         
-            addresses = [Address(src, hash, lon, lat, space_squash.sub(r' ', comma_squash.sub(r',', addr)), 'en')
-                         for (src, hash, lon, lat, addr) in db.fetchall()]
+            addresses = [Address(*row) for row in db.fetchall()]
             
             for addr in addresses:
                 graph.add_node(addr.hash, {'address': addr})
@@ -139,7 +95,7 @@ for hash in graph.nodes():
     address = graph.node[hash]['address']
     neighbor_hashes = graph.neighbors(hash)
     seen_hashes.add(hash)
-    properties = dict(hash=hash, addr=address.address)
+    properties = dict(hash=hash, addr=str(address))
     
     if len(neighbor_hashes) == 0:
         geometry = dict(type='Point', coordinates=[address.lon, address.lat])
@@ -151,7 +107,7 @@ for hash in graph.nodes():
             neighbor = graph.node[hash]['address']
             geometry['coordinates'].append([[address.lon, address.lat], [neighbor.lon, neighbor.lat]])
             properties['hash{}'.format(i)] = hash
-            properties['addr{}'.format(i)] = neighbor.address
+            properties['addr{}'.format(i)] = str(neighbor)
 
     feature = dict(geometry=geometry, properties=properties)
     features.append(feature)
