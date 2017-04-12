@@ -17,11 +17,12 @@ deduped between county and statewide sources:
 Sample Usage
 ---
 
-Sample usage to import data from `/tmp/us` to PostGIS `addresses` table
-and generate and `expanded.geojson` file:
+Sample usage to install required packages, import data from `/tmp/us` to PostGIS
+`addresses` table and generate and `expanded.geojson` file:
 
-    $ python import.py
-    $ python expand-map.py | sort | python expand-reduce.py
+    $ pip3 install -r requirements.txt
+    $ python3 import.py
+    $ python3 expand-map.py | sort | python3 expand-reduce.py
 
 Sample Times
 ---
