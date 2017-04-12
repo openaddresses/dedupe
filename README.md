@@ -1,6 +1,22 @@
 Dedupe
 ===
 
+Code for deduplicating OpenAddresses data, currently U.S. English only.
+Uses PostGIS to store addresses, and outputs GeoJSON with a mix of linestring
+features for matched groups of addresses and point features for unmatched
+single addresses.
+
+In this example image of [Butte, MT](http://www.openstreetmap.org/#map=15/46.0096/-112.5444)
+dark-colored linestrings show addresses that have been matched between county
+and statewide sources, while magenta dots show addresses that have not been
+matched all. This shows that most normal addresses in Butte are correctly
+deduped between county and statewide sources:
+
+![Butte, MT](Butte-MT.png)
+
+Sample Usage
+---
+
 Sample usage to import data from `/tmp/us` to PostGIS `addresses` table
 and generate and `expanded.geojson` file:
 
