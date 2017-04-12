@@ -1,28 +1,96 @@
-''' Expand duplicate OpenAddresses data to a new GeoJSON file.
-
-Uses simple string matching on number, street, and unit fields to compare
-normalized representations of nearby address records and dedupe them. Matching
-address points will be coalesced into linestring geometries showing connections
-between points.
-
-Assumes that import.py has already been run, and internally configured with
-bounding boxes near Cupertino, CA. Modify the value of bbox variable to change
-the active area.
+''' Utility class for deduplicating OpenAddresses data.
 '''
-#from postal import expand, parser
-import psycopg2, itertools, pprint, re, networkx, json, hashlib
+import json, hashlib, math, sys
 
-comma_squash = re.compile(r'\s+,')
-space_squash = re.compile(r'\s\s+')
+# Living on borrowed data.
+tokens = [
+    ["10th","Tenth"],["11th","Eleventh"],["12th","Twelfth"],["13th","Thirteenth"],
+    ["14th","Fourteenth"],["15th","Fifteenth"],["16th","Sixteenth"],["17th","Seventeenth"],
+    ["18th","Eighteenth"],["19th","Nineteenth"],["1st","First"],["20th","Twentieth"],
+    ["2nd","Second"],["3rd","Third"],["4th","Fourth"],["5th","Fifth"],["6th","Sixth"],
+    ["7th","Seventh"],["8th","Eighth"],["9th","Ninth"],["Accs","Access"],["Alwy","Alleyway"],
+    ["Aly","Ally","Alley"],["Ambl","Amble"],["App","Approach"],["Apt","Apartment"],
+    ["Apts","Apartments"],["Arc","Arcade"],["Artl","Arterial"],["Arty","Artery"],
+    ["Ave","Avenue","Av"],["Ba","Banan"],["Bch","Beach"],["Bg","Burg"],["Bgs","Burgs"],
+    ["Blf","Bluff"],["Blk","Block"],["Br","Brace","Branch"],["Brg","Bridge"],
+    ["Brk","Break","Brook"],["Brks","Brooks"],["Btm","Bottom"],["Bvd","Blvd","Boulevard"],
+    ["Bwlk","Boardwalk"],["Byp","Bypa","Bypass"],["Byu","Bayou"],["Bywy","Byway"],
+    ["Bzr","Bazaar"],["Cantt","Cantonment"],["Cct","Circuit"],["Ch","Chase","Church"],
+    ["Chk","Chowk"],["Cir","Circle"],["Cirs","Circles"],["Cl","Close","Clinic"],
+    ["Clb","Club"],["Clf","Cliff"],["Clfs","Cliffs"],["Cll","Calle"],["Cly","Colony"],
+    ["Cmn","Common"],["Cnl","Canal"],["Cnr","Cor","Corner"],["Coll","College"],
+    ["Con","Concourse"],["Const","Constituency"],["Corpn","Corporation"],["Cp","Camp"],
+    ["Cpe","Cape"],["Cplx","Complex"],["Cps","Copse"],["Crcs","Circus"],["Crk","Creek"],
+    ["Crse","Course"],["Crst","Crest"],["Csac","Cul-de-sac"],["Cswy","Causeway"],
+    ["Ct","Court"],["Ctr","Center","Centre"],["Ctrs","Centers"],["Cts","Courts"],
+    ["Ctyd","Courtyard"],["Curv","Curve"],["Cutt","Cutting"],["Cv","Cove"],["Cyn","Canyon"],
+    ["Dl","Dale"],["Dm","Dam"],["Dr","Drive"],["Drs","Drives"],["Dt","District"],
+    ["Dv","Divide"],["Dvwy","Driveway"],["E","East"],["Elb","Elbow"],["Ent","Entrance"],
+    ["Esp","Esplanade"],["Est","Estate"],["Ests","Estates"],["Exp","Expy","Expressway"],
+    ["Ext","Extension"],["Exts","Extensions"],["Fawy","Fairway"],["Fld","Field"],
+    ["Flds","Fields"],["Fls","Falls"],["Flt","Flat"],["Flts","Flats"],["Folw","Follow"],
+    ["Form","Formation"],["Frd","Ford"],["Frg","Forge"],["Frgs","Forges"],["Frk","Fork"],
+    ["Frst","Forest"],["Frtg","Frontage"],["Fry","Ferry"],["Ft","Feet","Fort"],
+    ["Ftwy","Footway"],["Fwy","Freeway"],["Gdns","Gardens"],["Gen","General"],["Gl","Galli"],
+    ["Glde","Glade"],["Govt","Government"],["Gr","Grove"],["Gra","Grange"],["Grd","Grade"],
+    ["Grn","Green"],["Gte","Gate"],["Hbr","Harbor"],["Hbrs","Harbors"],["Hird","Highroad"],
+    ["Hl","Hill"],["Hls","Hills"],["Holw","Hollow"],["Hosp","Hospital"],["Htl","Hotel"],
+    ["Hts","Heights"],["Hvn","Haven"],["Hwy","Highway"],["I","Interstate"],
+    ["Ind","Industrial"],["Intg","Interchange"],["Is","Island"],["Iss","Islands"],
+    ["Jcts","Junctions"],["Jn","Jct","Jnc","Junction"],["Jr","Junior"],["Knl","Knoll"],
+    ["Knls","Knolls"],["Ky","Key"],["Kys","Keys"],["Lck","Lock"],["Lcks","Locks"],
+    ["Ldg","Lodge"],["Lf","Loaf"],["Lgt","Light"],["Lgts","Lights"],["Lk","Lake"],
+    ["Lks","Lakes"],["Lkt","Lookout"],["Ln","Lane"],["Lndg","Landing"],["Lnwy","Laneway"],
+    ["Lt","Lieutenant"],["Lyt","Layout"],["Maj","Major"],["Mal","Mall"],
+    ["Mcplty","Municpality"],["Mdw","Meadow"],["Mdws","Meadows"],["Mg","Marg"],
+    ["Mhd","Moorhead"],["Mkt","Market"],["Ml","Mill"],["Mndr","Meander"],["Mnr","Manor"],
+    ["Mnrs","Manors"],["Mq","Mosque"],["Msn","Mission"],["Mt","Mount"],["Mtn","Mountain"],
+    ["Mtwy","Motorway"],["N","North"],["Nck","Neck"],["NE","Northeast"],["Ngr","Nagar"],
+    ["Nl","Nalla"],["NW","Northwest"],["Off","Office"],["Orch","Orchard"],["Otlk","Outlook"],
+    ["Ovps","Overpass"],["Pchyt","Panchayat"],["Pde","Parade"],["Pf","Platform"],
+    ["Ph","Phase"],["Piaz","Piazza"],["Pk","Peak"],["Pkt","Pocket"],["Pl","Place"],
+    ["Pln","Plain"],["Plns","Plains"],["Plz","Plza","Plaza"],["Pr","Prairie"],
+    ["Prom","Promenade"],["Prt","Port"],["Prts","Ports"],["Psge","Passage"],
+    ["Pt","Pnt","Point"],["Pts","Points"],["Pvt","Private"],["Pway","Pathway"],
+    ["Pwy","Pkwy","Parkway"],["Qdrt","Quadrant"],["Qtrs","Quarters"],["Qys","Quays"],
+    ["R","Riv","River"],["Radl","Radial"],["Rd","Road"],["Rdg","Rdge","Ridge"],
+    ["Rdgs","Ridges"],["Rds","Roads"],["Rly","Railway"],["Rmbl","Ramble"],["Rnch","Ranch"],
+    ["Rpd","Rapid"],["Rpds","Rapids"],["Rst","Rest"],["Rt","Restaurant"],["Rte","Route"],
+    ["Rtt","Retreat"],["Rty","Rotary"],["S","South"],["Sbwy","Subway"],["Sch","School"],
+    ["SE","Southeast"],["Sgt","Sergeant"],["Shl","Shoal"],["Shls","Shoals"],["Shr","Shore"],
+    ["Shrs","Shores"],["Shun","Shunt"],["Skwy","Skyway"],["Smt","Summit"],["Spg","Spring"],
+    ["Spgs","Springs"],["Sq","Square"],["Sqs","Squares"],["Sr","Senior"],
+    ["St","Saint","Street"],["Sta","Stn","Station"],["Std","Stadium"],["Stg","Stage"],
+    ["Strm","Stream"],["Sts","Streets"],["Svwy","Serviceway"],["SW","Southwest"],
+    ["Tce","Ter","Terrace"],["Tfwy","Trafficway"],["Thfr","Thoroughfare"],["Thwy","Thruway"],
+    ["Tlwy","Tollway"],["Tpke","Turnpike"],["Tpl","Temple"],["Trce","Trace"],["Trk","Track"],
+    ["Trl","Trail","Tr"],["Tunl","Tunnel"],["Twn","Town"],["Un","Union"],["Univ","University"],
+    ["Unp","Upas","Underpass"],["Uns","Unions"],["Via","Viad","Viaduct"],["Vis","Vsta","Vista"],
+    ["Vl","Ville"],["Vlg","Vill","Village"],["Vlgs","Villages"],["Vly","Valley"],
+    ["Vlys","Valleys"],["Vw","View"],["Vws","Views"],["W","West"],["Whrf","Wharf"],
+    ["Wkwy","Walkway"],["X","Cr","Cres","Crss","Cross","Crescent"],["Xing","Crossing"],
+    ["Wy","Way"],
+    ]
+
+# Prepare a map from common street name tokens to opaque hashed values.
+token_map = dict()
+
+for token in tokens:
+    normal = ', '.join(sorted(token)).encode('utf8')
+    value = hashlib.sha1(normal).hexdigest()[:5]
+    token_map.update({opt.lower(): value for opt in token})
 
 class Address:
-    def __init__(self, source, hash, lon, lat, number, street, unit, city, district, region, postcode):
+    ''' A single OA address.
+    '''
+    def __init__(self, source, hash, lon, lat, x, y, number, street, unit, city, district, region, postcode):
         street_normal = ''.join([token_map.get(s, s) for s in street.lower().split()])
-        print('Address:', (number, street, unit, city, district, region, postcode))
         self.source = source
         self.hash = hash
         self.lon = lon
         self.lat = lat
+        self.x = x
+        self.y = y
 
         self.number = number
         self.street = street
@@ -33,87 +101,44 @@ class Address:
         self.region = region
         self.postcode = postcode
     
+    def quadtiles(self, zoom):
+        ''' Return four possible quadtile coordinates for comparison purposes.
+        
+            Assume x and y are given in Mercator meters.
+        '''
+        factor, circumference = math.pow(2, zoom), (6378137 * 2 * math.pi)
+        row0, col0 = (.5 - self.y / circumference), (.5 + self.x / circumference)
+        row, col = int(row0 * factor), int(col0 * factor)
+        
+        return (
+            '{z:.0f}/{x:.0f}/{y:.0f}'.format(y=row + 0, x=col + 0, z=zoom),
+            '{z:.0f}/{x:.0f}/{y:.0f}'.format(y=row + 0, x=col + 1, z=zoom),
+            '{z:.0f}/{x:.0f}/{y:.0f}'.format(y=row + 1, x=col + 0, z=zoom),
+            '{z:.0f}/{x:.0f}/{y:.0f}'.format(y=row + 1, x=col + 1, z=zoom),
+            )
+    
     def matches(self, other):
+        ''' Return true if this address matches another.
+        
+            Compare on street number, token-normalized street name, and unit.
+        '''
         return bool(
             self.number == other.number
             and self.street_normal == other.street_normal
             and self.unit == other.unit
             )
     
+    def tojson(self):
+        ''' Output a JSON array that can be passed directly to constructor.
+        '''
+        return json.dumps([
+            self.source, self.hash, self.lon, self.lat, self.x, self.y,
+            self.number, self.street, self.unit, self.city, self.district,
+            self.region, self.postcode
+            ])
+    
     def __str__(self):
         return self.number + ' ' + self.street + ', ' + self.unit
-
-def parsed_expansions(address, lang):
-    '''
-    '''
-    return [Parse(**{k: v for (v, k) in parser.parse_address(expanded, lang, 'us')})
-            for expanded
-            in expand.expand_address(address, lang, **EXPAND_KWARGS)]
-
-bbox = 'POINT (-122.0683 37.2920)', 'POINT (-121.9917 37.3390)'
-#bbox = -122.04137, 37.31545, -122.03168, 37.32306 # one block in cupertino
-bbox = -122.0683, 37.2920, -121.9917, 37.3390 # all of cupertino
-#bbox = -122.203, 37.200, -121.699, 37.480 # all of the south bay
-
-step = .002
-xs = ((x, x + step*2) for x in itertools.takewhile(lambda x: x < bbox[2], itertools.count(bbox[0], step)))
-ys = ((y, y + step*2) for y in itertools.takewhile(lambda y: y < bbox[3], itertools.count(bbox[1], step)))
-
-graph = networkx.Graph()
-
-with psycopg2.connect('postgres://oa:oa@localhost/oa') as conn:
-    with conn.cursor() as db:
-        for ((x1, x2), (y1, y2)) in list(itertools.product(xs, ys)):
-            p1 = 'POINT({:.4f} {:.4f})'.format(x1, y1)
-            p2 = 'POINT({:.4f} {:.4f})'.format(x2, y2)
-            print(p1, p2)
-
-            db.execute('''
-                SELECT source, hash, ST_X(location) as lon, ST_Y(location) as lat,
-                       number, street, unit, city, district, region, postcode
-                FROM addresses WHERE location && ST_SetSRID(ST_MakeBox2d(%s, %s), 4326)
-              --  AND number = '10340' AND street = 'WESTACRES DR'
-                AND number != '' AND street != ''
-                ''', (p1, p2))
-        
-            addresses = [Address(*row) for row in db.fetchall()]
-            
-            for addr in addresses:
-                graph.add_node(addr.hash, {'address': addr})
-            
-            for (addr1, addr2) in itertools.combinations(addresses, 2):
-                if addr1.matches(addr2):
-                    graph.add_edge(addr1.hash, addr2.hash)
-
-seen_hashes = set()
-features = list()
-
-for hash in graph.nodes():
-    if hash in seen_hashes:
-        continue
-    
-    address = graph.node[hash]['address']
-    neighbor_hashes = graph.neighbors(hash)
-    seen_hashes.add(hash)
-    properties = dict(hash=hash, addr=str(address))
-    
-    if len(neighbor_hashes) == 0:
-        geometry = dict(type='Point', coordinates=[address.lon, address.lat])
-    
-    else:
-        geometry = dict(type='MultiLineString', coordinates=[])
-        for (i, hash) in zip(itertools.count(2), neighbor_hashes):
-            seen_hashes.add(hash)
-            neighbor = graph.node[hash]['address']
-            geometry['coordinates'].append([[address.lon, address.lat], [neighbor.lon, neighbor.lat]])
-            properties['hash{}'.format(i)] = hash
-            properties['addr{}'.format(i)] = str(neighbor)
-
-    feature = dict(geometry=geometry, properties=properties)
-    features.append(feature)
-
-with open('expanded.geojson', 'w') as file:
-    json.dump(dict(type='FeatureCollection', features=features), file)
 
 if __name__ == '__main__':
     import doctest
