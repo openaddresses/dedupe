@@ -83,7 +83,7 @@ for token in tokens:
 class Address:
     ''' A single OA address.
     '''
-    def __init__(self, source, hash, lon, lat, x, y, number, street, unit, city, district, region, postcode):
+    def __init__(self, source, hash, lon, lat, x, y, number, street, unit, city=None, district=None, region=None, postcode=None):
         street_normal = ''.join([token_map.get(s, s) for s in street.lower().split()])
         self.source = source
         self.hash = hash

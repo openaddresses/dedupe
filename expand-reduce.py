@@ -48,27 +48,24 @@ for hash in graph.nodes():
     address = graph.node[hash]['address']
     neighbor_hashes = graph.neighbors(hash)
     seen_hashes.add(hash)
-    properties = dict(hash=hash, addr=str(address))
+    properties = dict(hash=hash, number=address.number, street=address.street, unit=address.unit)
     
     if len(neighbor_hashes) == 0:
         geometry = dict(type='Point', coordinates=[address.lon, address.lat])
     
     else:
-        geometry = dict(type='MultiLineString', coordinates=[])
+        geometry = dict(type='MultiPoint', coordinates=[[address.lon, address.lat]])
         for (i, hash) in zip(itertools.count(2), neighbor_hashes):
             seen_hashes.add(hash)
             neighbor = graph.node[hash]['address']
-            geometry['coordinates'].append([[address.lon, address.lat], [neighbor.lon, neighbor.lat]])
-            properties['hash{}'.format(i)] = hash
-            properties['addr{}'.format(i)] = str(neighbor)
+            geometry['coordinates'].append([neighbor.lon, neighbor.lat])
 
     feature = dict(geometry=geometry, properties=properties)
     features.append(feature)
 
 print(len(features), 'merged features.', file=sys.stderr)
 
-with open('expanded.geojson', 'w') as file:
-    json.dump(dict(type='FeatureCollection', features=features), file)
+json.dump(dict(type='FeatureCollection', features=features), sys.stdout)
 
 if __name__ == '__main__':
     import doctest
