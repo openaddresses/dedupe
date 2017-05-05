@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+''' Combine State and CBSA areas into a continuous output quilt.
+
+Reads shapes from geodata/tl_2016_us_state.shp and geodata/tl_2016_us_cbsa.shp,
+splits them into 1x1 degree boxes, subtracts CBSA areas from states, and writes
+a unified shapefile.
+'''
 from osgeo import ogr, osr
 import collections, math, sys
 
