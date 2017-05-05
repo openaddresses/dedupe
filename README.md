@@ -2,9 +2,8 @@ Dedupe
 ===
 
 Code for deduplicating OpenAddresses data, currently U.S. English only.
-Uses PostGIS to store addresses, and outputs GeoJSON with a mix of linestring
-features for matched groups of addresses and point features for unmatched
-single addresses.
+Outputs GeoJSON with a mix of linestring features for matched groups of
+addresses and point features for unmatched single addresses.
 
 In this example image of [Butte, MT](http://www.openstreetmap.org/#map=15/46.0096/-112.5444)
 dark-colored linestrings show addresses that have been matched between county
@@ -17,12 +16,18 @@ deduped between county and statewide sources:
 Sample Usage
 ---
 
-Sample usage to install required packages, import data from `/tmp/us` to PostGIS
-`addresses` table and generate and `expanded.geojson` file:
+Sample usage to install required packages, download 100,000 rows of sample data
+from OpenAddresses, and generate a set of geojson files:
 
     $ pip3 install -r requirements.txt
-    $ python3 import.py
-    $ python3 expand-map.py | sort | python3 expand-reduce.py
+    $ ./address-areas.py | head -n 100000 > 100k-addresses.txt
+    $ sort -k 1,9 100k-addresses.txt | ./address-map.py > 100k-filenames.txt
+    $ for FILE in `cat 100k-filenames.txt`; do \
+        sort -k 1,20 $FILE | ./expand-reduce.py > $FILE.geojson; \
+        done
+
+Addresses are deduped within the areas found in `geodata/areas.shp` matching
+U.S. Census defined CBSA's and excluded state areas.
 
 Sample Times
 ---

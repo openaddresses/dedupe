@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 ''' Reduce mapped OpenAddresses duplicates to a new GeoJSON file.
 
 Accepts sorted input from expand-map.py and iterates over address rows within
