@@ -1,4 +1,6 @@
-all: geodata/tl_2016_us_cbsa.shp geodata/tl_2016_us_state.shp
+geodata/areas.shp: geodata/tl_2016_us_cbsa.shp geodata/tl_2016_us_state.shp
+	rm -f geodata/areas.shp geodata/areas.shx geodata/areas.prj geodata/areas.dbf
+	./prepare-areas.py $@
 
 geodata/tl_2016_us_cbsa.shp:
 	mkdir -pv geodata/tmp
@@ -7,7 +9,7 @@ geodata/tl_2016_us_cbsa.shp:
 	unzip -qd geodata/tmp -o geodata/tmp/tl_2016_us_cbsa.zip tl_2016_us_cbsa.shp \
 		tl_2016_us_cbsa.shx tl_2016_us_cbsa.prj tl_2016_us_cbsa.dbf tl_2016_us_cbsa.cpg
 	# Limit to just California and Nevada for now
-	ogr2ogr -spat -115.07 41.61 -124.89 32.45 -overwrite $@ geodata/tmp/tl_2016_us_cbsa.shp
+	ogr2ogr -spat -115.07 41.61 -124.89 32.45 -t_srs EPSG:4326 -overwrite $@ geodata/tmp/tl_2016_us_cbsa.shp
 
 geodata/tl_2016_us_state.shp:
 	mkdir -pv geodata/tmp
@@ -16,4 +18,4 @@ geodata/tl_2016_us_state.shp:
 	unzip -qd geodata/tmp -o geodata/tmp/tl_2016_us_state.zip tl_2016_us_state.shp \
 		tl_2016_us_state.shx tl_2016_us_state.prj tl_2016_us_state.dbf tl_2016_us_state.cpg
 	# Limit to just California and Nevada for now
-	ogr2ogr -where "STATEFP in ('06', '32')" -overwrite $@ geodata/tmp/tl_2016_us_state.shp
+	ogr2ogr -where "STATEFP in ('06', '32')" -t_srs EPSG:4326 -overwrite $@ geodata/tmp/tl_2016_us_state.shp
