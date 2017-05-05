@@ -29,6 +29,8 @@ from OpenAddresses, and generate a set of geojson files:
 Addresses are deduped within the areas found in `geodata/areas.shp` matching
 U.S. Census defined CBSA's and excluded state areas.
 
+![California and Nevada](CA-NV.png)
+
 Sample Times
 ---
 
