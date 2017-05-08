@@ -20,8 +20,7 @@ Sample usage to install required packages, download 100,000 rows of sample data
 from OpenAddresses, and generate a set of geojson files:
 
     $ pip3 install -r requirements.txt
-    $ ./address-areas.py | head -n 100000 > 100k-addresses.txt
-    $ sort -k 1,9 100k-addresses.txt | ./address-map.py > 100k-filenames.txt
+    $ ./address-areas.py | head -n 100000 | ./address-map.py > 100k-filenames.txt
     $ for FILE in `cat 100k-filenames.txt`; do \
         sort -k 1,20 $FILE | ./expand-reduce.py > $FILE.geojson; \
         done

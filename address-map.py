@@ -7,24 +7,28 @@ with simple commandline implementations like bashreduce:
 
     http://blog.last.fm/2009/04/06/mapreduce-bash-script
 
-Assumes that stdin containes sorted, space-delimited lines with a meaningful
-alphanumeric key at the beginning. Writes groupings to output files, and emits
-filenames to stdout.
+Assumes that stdin containes space-delimited lines with a meaningful
+alphanumeric key at the beginning. Writes groupings to output files,
+and emits filenames to stdout.
 '''
 from expand import Address
 import sys, json, itertools, operator
 
 lines = (line.split(' ', 1) for line in sys.stdin)
+written = set()
 
 for (key, lines) in itertools.groupby(lines, key=operator.itemgetter(0)):
     count, filename = 0, 'addresses-{}.txt'.format(key)
-    print(filename, file=sys.stdout)
     
-    with open(filename, 'w') as file:
+    with open(filename, 'a' if (filename in written) else 'w') as file:
         for (_, line) in lines:
             address = Address(*json.loads(line))
             for tile in address.quadtiles(zoom=19):
                 print(tile, address.tojson(), file=file)
             count += 1
+        written.add(filename)
                 
     print('Wrote', count, 'addresses to', filename, file=sys.stderr)
+
+for filename in written:
+    print(filename, file=sys.stdout)
