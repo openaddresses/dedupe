@@ -15,12 +15,21 @@ between points.
 Certain U.S.-specific street name tokens like "Av"/"Ave"/"Avenue", "E"/"East",
 or "2nd"/"Second" are treated as identical to maximize matches.
 '''
-import itertools, pprint, re, networkx, json, hashlib, sys, operator
+import argparse, itertools, pprint, re, networkx, json, hashlib, sys, operator, subprocess, io
 
 from expand import Address
 
+parser = argparse.ArgumentParser(description='Reduce mapped OpenAddresses duplicates to a new GeoJSON file.')
+
+parser.add_argument('input', help='Text file containing tile-prefixed address data.')
+parser.add_argument('output', help='GeoJSON file for deduped addresses.')
+
+args = parser.parse_args()
+
+print('Sorting lines from', args.input, '...', file=sys.stderr)
+sorter = subprocess.Popen(['sort', '-k', '1,20', args.input], stdout=subprocess.PIPE)
+lines = (line.split(' ', 1) for line in io.TextIOWrapper(sorter.stdout))
 graph = networkx.Graph()
-lines = (line.split(' ', 1) for line in sys.stdin)
 
 count = 0
 
@@ -66,7 +75,8 @@ for hash in graph.nodes():
 
 print(len(features), 'merged features.', file=sys.stderr)
 
-json.dump(dict(type='FeatureCollection', features=features), sys.stdout)
+with open(args.output, 'w') as out:
+    json.dump(dict(type='FeatureCollection', features=features), out)
 
 if __name__ == '__main__':
     import doctest

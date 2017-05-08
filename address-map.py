@@ -23,12 +23,12 @@ for (key, lines) in itertools.groupby(lines, key=operator.itemgetter(0)):
     with open(filename, 'a' if (filename in written) else 'w') as file:
         for (_, line) in lines:
             address = Address(*json.loads(line))
+            addr_json = address.tojson()
             for tile in address.quadtiles(zoom=19):
-                print(tile, address.tojson(), file=file)
+                print(tile, addr_json, file=file)
             count += 1
         written.add(filename)
-                
-    print('Wrote', count, 'addresses to', filename, file=sys.stderr)
+        print('Added' if ('a' in file.mode) else 'Wrote', count, 'addresses to', filename, file=sys.stderr)
 
 for filename in written:
     print(filename, file=sys.stdout)
