@@ -1,12 +1,30 @@
 #!/usr/bin/env python3
+''' Stream OpenAddresses data mapped to shapefile areas to stdout.
+
+Downloads data from 1x1 degree OpenAddresses tile index, checks for overlap
+with each shapefile area, and outputs to stdout:
+
+    {geoid 1} [{source}, {hash}, {lon}, {lat}, {x}, {y}, {number}, {street}, {unit}, ...]
+    {geoid 2} [{source}, {hash}, {lon}, {lat}, {x}, {y}, {number}, {street}, {unit}, ...]
+    {geoid 3} [{source}, {hash}, {lon}, {lat}, {x}, {y}, {number}, {street}, {unit}, ...]
+    ...
+'''
 from osgeo import ogr, osr
 from expand import Address
-import itertools, zipfile, csv, requests, io, sys
+import argparse, itertools, zipfile, csv, requests, io, sys
 
 def feature_box_key(feature):
     '''
     '''
     return feature.GetField('lon'), feature.GetField('lat')
+    
+parser = argparse.ArgumentParser(description='Stream addresses for area shapes to stdout.')
+
+parser.add_argument('--areas', default='geodata/areas.shp',
+                    help='Shapefile containing areas to use for groups. '
+                         'Default value "geodata/areas.shp".')
+
+args = parser.parse_args()
 
 sref4326 = osr.SpatialReference(); sref4326.ImportFromEPSG(4326)
 sref900913 = osr.SpatialReference(); sref900913.ImportFromEPSG(900913)
@@ -15,7 +33,7 @@ mercator = osr.CoordinateTransformation(sref4326, sref900913)
 openaddr_url = 'https://results.openaddresses.io/index.json'
 url_template = requests.get(openaddr_url).json().get('tileindex_url')
 
-areas_ds = ogr.Open('geodata/areas.shp')
+areas_ds = ogr.Open(args.areas)
 areas_features = sorted(areas_ds.GetLayer(0), key=feature_box_key)
 
 for ((lon, lat), features) in itertools.groupby(areas_features, feature_box_key):
