@@ -21,8 +21,10 @@ def feature_box_key(feature):
 parser = argparse.ArgumentParser(description='Stream addresses for area shapes to stdout.')
 
 parser.add_argument('--areas', default='geodata/areas.shp',
-                    help='Shapefile containing areas to use for groups. '
+                    help='Datasource containing areas to use for groups. '
                          'Default value "geodata/areas.shp".')
+
+parser.add_argument('output', help='Output file.')
 
 args = parser.parse_args()
 
@@ -35,6 +37,8 @@ url_template = requests.get(openaddr_url).json().get('tileindex_url')
 
 areas_ds = ogr.Open(args.areas)
 areas_features = sorted(areas_ds.GetLayer(0), key=feature_box_key)
+
+output = open(args.output, 'w')
 
 for ((lon, lat), features) in itertools.groupby(areas_features, feature_box_key):
     areas = {feat.GetField('geoid'): feat.GetGeometryRef() for feat in features if feat.GetGeometryRef()}
@@ -62,4 +66,4 @@ for ((lon, lat), features) in itertools.groupby(areas_features, feature_box_key)
                 row['DISTRICT'], row['REGION'], row['POSTCODE']
                 )
 
-            print(area_geoid, address.tojson(), file=sys.stdout)
+            print(area_geoid, address.tojson(), file=output)

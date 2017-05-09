@@ -20,7 +20,7 @@ Sample usage to install required packages, download 100,000 rows of sample data
 from OpenAddresses, and generate a set of geojson files using GNU Parallel:
 
     $ pip3 install -r requirements.txt
-    $ ./address-areas.py | head -n 100000 | ./address-map.py > 100k-filenames.txt
+    $ ./address-areas.py /dev/stdout | head -n 100000 | ./address-map.py > 100k-filenames.txt
     $ parallel -a 100k-filenames.txt './expand-reduce.py {} {.}.geojson'
 
 Addresses are deduped within the areas found in `geodata/areas.shp` matching
