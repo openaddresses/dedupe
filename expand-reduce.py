@@ -9,13 +9,13 @@ implementations like bashreduce:
 
 Uses simple string matching on number, street, and unit fields to compare
 normalized representations of nearby address records and dedupe them. Matching
-address points will be coalesced into linestring geometries showing connections
-between points.
+address points will be coalesced into single point geometries with origin point
+counts and average point cluster radius in web mercator meters.
 
 Certain U.S.-specific street name tokens like "Av"/"Ave"/"Avenue", "E"/"East",
 or "2nd"/"Second" are treated as identical to maximize matches.
 '''
-import argparse, itertools, pprint, re, networkx, json, hashlib, sys, operator, subprocess, io
+import argparse, itertools, pprint, re, networkx, json, hashlib, sys, operator, subprocess, io, math, statistics
 
 from expand import Address
 
@@ -64,18 +64,30 @@ for hash in graph.nodes():
     address = graph.node[hash]['address']
     neighbor_hashes = graph.neighbors(hash)
     seen_hashes.add(hash)
-    properties = dict(hash=hash, number=address.number, street=address.street, unit=address.unit)
+    geometry = dict(type='Point', coordinates=[address.lon, address.lat])
+    properties = dict(number=address.number, street=address.street, unit=address.unit)
+    neighbor_count, neighbor_radius = 1, None
     
-    if len(neighbor_hashes) == 0:
-        geometry = dict(type='Point', coordinates=[address.lon, address.lat])
-    
-    else:
-        geometry = dict(type='MultiPoint', coordinates=[[address.lon, address.lat]])
+    if len(neighbor_hashes) > 0:
+        # When there are matching nearby neighbors, record the center of
+        # the identified point cluster and note count of duplicate points.
+        xs, ys = [address.x], [address.y]
+        lons, lats = [address.lon], [address.lat]
         for (i, hash) in zip(itertools.count(2), neighbor_hashes):
             seen_hashes.add(hash)
             neighbor = graph.node[hash]['address']
-            geometry['coordinates'].append([neighbor.lon, neighbor.lat])
-
+            lons.append(neighbor.lon)
+            lats.append(neighbor.lat)
+            xs.append(neighbor.x)
+            ys.append(neighbor.y)
+            neighbor_count += 1
+        geometry['coordinates'][0] = statistics.mean(lons)
+        geometry['coordinates'][1] = statistics.mean(lats)
+        x, y = statistics.mean(xs), statistics.mean(ys)
+        hypots = [math.hypot(x - x1, y - y1) for (x1, y1) in zip(xs, ys)]
+        neighbor_radius = int(statistics.mean(hypots))
+    
+    properties.update(radius=neighbor_radius, count=neighbor_count)
     feature = dict(geometry=geometry, properties=properties)
     features.append(feature)
 
