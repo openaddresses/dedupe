@@ -15,14 +15,15 @@ counts and average point cluster radius in web mercator meters.
 Certain U.S.-specific street name tokens like "Av"/"Ave"/"Avenue", "E"/"East",
 or "2nd"/"Second" are treated as identical to maximize matches.
 '''
-import argparse, itertools, pprint, re, networkx, json, hashlib, sys, operator, subprocess, io, math, statistics
+import argparse, itertools, pprint, re, networkx, json, hashlib, \
+    sys, operator, subprocess, io, math, statistics, csv
 
 from expand import Address
 
 parser = argparse.ArgumentParser(description='Reduce mapped OpenAddresses duplicates to a new GeoJSON file.')
 
 parser.add_argument('input', help='Text file containing tile-prefixed address data.')
-parser.add_argument('output', help='GeoJSON file for deduped addresses.')
+parser.add_argument('output', help='CSV file for deduped addresses.')
 
 args = parser.parse_args()
 
@@ -93,8 +94,20 @@ for hash in graph.nodes():
 
 print(len(features), 'merged features.', file=sys.stderr)
 
-with open(args.output, 'w') as out:
-    json.dump(dict(type='FeatureCollection', features=features), out)
+with open(args.output, 'w') as file:
+    out = csv.DictWriter(file, ('NUMBER', 'STREET', 'UNIT', 'LAT', 'LON', 'OA:COUNT', 'OA:RADIUS'))
+    out.writeheader()
+    
+    for feature in features:
+        out.writerow({
+            'NUMBER': feature['properties']['number'],
+            'STREET': feature['properties']['street'],
+            'UNIT': feature['properties']['unit'],
+            'LON': feature['geometry']['coordinates'][0],
+            'LAT': feature['geometry']['coordinates'][1],
+            'OA:COUNT': feature['properties']['count'],
+            'OA:RADIUS': feature['properties']['radius'],
+            })
 
 if __name__ == '__main__':
     import doctest
