@@ -29,7 +29,7 @@ parser.add_argument('output', help='Output file.')
 args = parser.parse_args()
 
 sref4326 = osr.SpatialReference(); sref4326.ImportFromEPSG(4326)
-sref900913 = osr.SpatialReference(); sref900913.ImportFromEPSG(900913)
+sref900913 = osr.SpatialReference(); sref900913.ImportFromProj4('+proj=merc +a=6378137 +b=6378137 +lat_ts=0.0 +lon_0=0.0 +x_0=0.0 +y_0=0 +k=1.0 +units=m +nadgrids=@null +wktext +no_defs')
 mercator = osr.CoordinateTransformation(sref4326, sref900913)
 
 openaddr_url = 'https://results.openaddresses.io/index.json'
