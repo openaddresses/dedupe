@@ -37,7 +37,13 @@ for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
     count += 1
     #print('.', sep='', end='', file=sys.stderr)
 
-    addresses = [Address(*json.loads(row)) for (_, row) in rows]
+    addresses = list()
+    for row in rows:
+        try:
+            _, addr_args = row
+            addresses.append(Address(*json.loads(addr_args)))
+        except:
+            pass
             
     for addr in addresses:
         graph.add_node(addr.hash, {'address': addr})
