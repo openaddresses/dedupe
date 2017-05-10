@@ -50,6 +50,10 @@ for ((lon, lat), features) in itertools.groupby(areas_features, feature_box_key)
     addr_rows = csv.DictReader(io.TextIOWrapper(addr_buff))
     
     for row in addr_rows:
+        if not row['NUMBER'] and not row['STREET']:
+            # Skip blank addresses
+            continue
+    
         addr_geom = ogr.Geometry(wkt='POINT({LON} {LAT})'.format(**row))
         
         for (area_geoid, area_geom) in areas.items():
@@ -57,13 +61,9 @@ for ((lon, lat), features) in itertools.groupby(areas_features, feature_box_key)
                 # Skip addresses outside the local area
                 continue
             
-            if not row['NUMBER'] and not row['STREET']:
-                # Skip blank addresses
-                continue
-        
             lon, lat = addr_geom.GetX(), addr_geom.GetY()
             addr_geom.Transform(mercator)
-            x, y = addr_geom.GetX(), addr_geom.GetY()
+            x, y = round(addr_geom.GetX(), 1), round(addr_geom.GetY(), 1)
         
             address = Address(
                 row['OA:Source'], row['HASH'], lon, lat, x, y,
