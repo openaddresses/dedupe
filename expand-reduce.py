@@ -89,7 +89,10 @@ with open(args.output, 'w') as file:
             hypots = [math.hypot(x - x1, y - y1) for (x1, y1) in zip(xs, ys)]
             neighbor_radius = int(statistics.mean(hypots))
     
-        graph.remove_node(hash)
+        try:
+            graph.remove_node(hash)
+        except networkx.exception.NetworkXError:
+            pass # Sometimes the node has already been removed?
         merged_count += 1
 
         out.writerow({
