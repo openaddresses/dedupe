@@ -54,6 +54,11 @@ for ((lon, lat), features) in itertools.groupby(areas_features, feature_box_key)
         
         for (area_geoid, area_geom) in areas.items():
             if not addr_geom.Within(area_geom):
+                # Skip addresses outside the local area
+                continue
+            
+            if not row['NUMBER'] and not row['STREET']:
+                # Skip blank addresses
                 continue
         
             lon, lat = addr_geom.GetX(), addr_geom.GetY()
@@ -62,8 +67,7 @@ for ((lon, lat), features) in itertools.groupby(areas_features, feature_box_key)
         
             address = Address(
                 row['OA:Source'], row['HASH'], lon, lat, x, y,
-                row['NUMBER'], row['STREET'], row['UNIT'], row['CITY'],
-                row['DISTRICT'], row['REGION'], row['POSTCODE']
+                row['NUMBER'], row['STREET'], row['UNIT']
                 )
 
             print(area_geoid, address.tojson(), file=output)
