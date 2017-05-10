@@ -55,16 +55,14 @@ for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
 
 print('-', count, 'address tiles.', file=sys.stderr)
 
-seen_hashes = set()
 features = list()
 
 for hash in graph.nodes():
-    if hash in seen_hashes:
+    if hash not in graph:
         continue
     
     address = graph.node[hash]['address']
     neighbor_hashes = graph.neighbors(hash)
-    seen_hashes.add(hash)
     geometry = dict(type='Point', coordinates=[address.lon, address.lat])
     properties = dict(number=address.number, street=address.street, unit=address.unit)
     neighbor_count, neighbor_radius = 1, None
@@ -74,20 +72,21 @@ for hash in graph.nodes():
         # the identified point cluster and note count of duplicate points.
         xs, ys = [address.x], [address.y]
         lons, lats = [address.lon], [address.lat]
-        for (i, hash) in zip(itertools.count(2), neighbor_hashes):
-            seen_hashes.add(hash)
-            neighbor = graph.node[hash]['address']
+        for (i, neighbor_hash) in zip(itertools.count(2), neighbor_hashes):
+            neighbor = graph.node[neighbor_hash]['address']
             lons.append(neighbor.lon)
             lats.append(neighbor.lat)
             xs.append(neighbor.x)
             ys.append(neighbor.y)
             neighbor_count += 1
+            graph.remove_node(neighbor_hash)
         geometry['coordinates'][0] = statistics.mean(lons)
         geometry['coordinates'][1] = statistics.mean(lats)
         x, y = statistics.mean(xs), statistics.mean(ys)
         hypots = [math.hypot(x - x1, y - y1) for (x1, y1) in zip(xs, ys)]
         neighbor_radius = int(statistics.mean(hypots))
     
+    graph.remove_node(hash)
     properties.update(radius=neighbor_radius, count=neighbor_count)
     feature = dict(geometry=geometry, properties=properties)
     features.append(feature)
