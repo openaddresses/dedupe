@@ -55,58 +55,54 @@ for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
 
 print('-', count, 'address tiles.', file=sys.stderr)
 
-features = list()
-
-for hash in graph.nodes():
-    if hash not in graph:
-        continue
-    
-    address = graph.node[hash]['address']
-    neighbor_hashes = graph.neighbors(hash)
-    geometry = dict(type='Point', coordinates=[address.lon, address.lat])
-    properties = dict(number=address.number, street=address.street, unit=address.unit)
-    neighbor_count, neighbor_radius = 1, None
-    
-    if len(neighbor_hashes) > 0:
-        # When there are matching nearby neighbors, record the center of
-        # the identified point cluster and note count of duplicate points.
-        xs, ys = [address.x], [address.y]
-        lons, lats = [address.lon], [address.lat]
-        for (i, neighbor_hash) in zip(itertools.count(2), neighbor_hashes):
-            neighbor = graph.node[neighbor_hash]['address']
-            lons.append(neighbor.lon)
-            lats.append(neighbor.lat)
-            xs.append(neighbor.x)
-            ys.append(neighbor.y)
-            neighbor_count += 1
-            graph.remove_node(neighbor_hash)
-        geometry['coordinates'][0] = statistics.mean(lons)
-        geometry['coordinates'][1] = statistics.mean(lats)
-        x, y = statistics.mean(xs), statistics.mean(ys)
-        hypots = [math.hypot(x - x1, y - y1) for (x1, y1) in zip(xs, ys)]
-        neighbor_radius = int(statistics.mean(hypots))
-    
-    graph.remove_node(hash)
-    properties.update(radius=neighbor_radius, count=neighbor_count)
-    feature = dict(geometry=geometry, properties=properties)
-    features.append(feature)
-
-print(len(features), 'merged features.', file=sys.stderr)
+merged_count = 0
 
 with open(args.output, 'w') as file:
     out = csv.DictWriter(file, ('NUMBER', 'STREET', 'UNIT', 'LAT', 'LON', 'OA:COUNT', 'OA:RADIUS'))
     out.writeheader()
     
-    for feature in features:
+    for hash in graph.nodes():
+        if hash not in graph:
+            continue
+    
+        address = graph.node[hash]['address']
+        neighbor_hashes = graph.neighbors(hash)
+        longitude, latitude = address.lon, address.lat
+        neighbor_count, neighbor_radius = 1, None
+    
+        if len(neighbor_hashes) > 0:
+            # When there are matching nearby neighbors, record the center of
+            # the identified point cluster and note count of duplicate points.
+            xs, ys = [address.x], [address.y]
+            lons, lats = [address.lon], [address.lat]
+            for (i, neighbor_hash) in zip(itertools.count(2), neighbor_hashes):
+                neighbor = graph.node[neighbor_hash]['address']
+                lons.append(neighbor.lon)
+                lats.append(neighbor.lat)
+                xs.append(neighbor.x)
+                ys.append(neighbor.y)
+                neighbor_count += 1
+                graph.remove_node(neighbor_hash)
+            longitude = statistics.mean(lons)
+            latitude = statistics.mean(lats)
+            x, y = statistics.mean(xs), statistics.mean(ys)
+            hypots = [math.hypot(x - x1, y - y1) for (x1, y1) in zip(xs, ys)]
+            neighbor_radius = int(statistics.mean(hypots))
+    
+        graph.remove_node(hash)
+        merged_count += 1
+
         out.writerow({
-            'NUMBER': feature['properties']['number'],
-            'STREET': feature['properties']['street'],
-            'UNIT': feature['properties']['unit'],
-            'LON': feature['geometry']['coordinates'][0],
-            'LAT': feature['geometry']['coordinates'][1],
-            'OA:COUNT': feature['properties']['count'],
-            'OA:RADIUS': feature['properties']['radius'],
+            'NUMBER': address.number,
+            'STREET': address.street,
+            'UNIT': address.unit,
+            'LON': longitude,
+            'LAT': latitude,
+            'OA:COUNT': neighbor_count,
+            'OA:RADIUS': neighbor_radius,
             })
+
+    print(merged_count, 'merged addresses.', file=sys.stderr)
 
 if __name__ == '__main__':
     import doctest
