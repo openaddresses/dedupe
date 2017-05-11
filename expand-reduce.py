@@ -15,10 +15,50 @@ counts and average point cluster radius in web mercator meters.
 Certain U.S.-specific street name tokens like "Av"/"Ave"/"Avenue", "E"/"East",
 or "2nd"/"Second" are treated as identical to maximize matches.
 '''
-import argparse, itertools, pprint, re, networkx, json, hashlib, \
-    sys, operator, subprocess, io, math, statistics, csv
+import argparse, itertools, pprint, re, json, hashlib, \
+    sys, operator, subprocess, io, math, statistics, csv, sqlite3
 
 from expand import Address
+
+def iterate_addresses(db):
+    '''
+    '''
+    while True:
+        try:
+            res = db.execute('select args_list from addrs limit 1')
+            (addr_args, ) = res.fetchone()
+        except TypeError:
+            break
+        else:
+            yield Address(*json.loads(addr_args))
+
+def load_neighbors(db, hash):
+    '''
+    '''
+    neighbors = dict()
+    
+    res1 = db.execute('''select edges.hash2, addrs.args_list from edges, addrs
+                         where edges.hash1 = ? and addrs.hash = edges.hash2''', (hash, ))
+
+    res2 = db.execute('''select edges.hash1, addrs.args_list from edges, addrs
+                         where edges.hash2 = ? and addrs.hash = edges.hash1''', (hash, ))
+
+    for (h, a) in res1:
+        neighbors[h] = Address(*json.loads(a))
+    
+    for (h, a) in res2:
+        neighbors[h] = Address(*json.loads(a))
+
+    return neighbors
+
+def delete_address(db, hash):
+    '''
+    '''
+    db.execute('delete from addrs where hash = ?', (hash, ))
+
+db = sqlite3.connect(':memory:')
+db.execute('''create table addrs ( hash text, args_list text, primary key (hash) )''')
+db.execute('''create table edges ( hash1 text, hash2 text, primary key (hash1, hash2) )''')
 
 parser = argparse.ArgumentParser(description='Reduce mapped OpenAddresses duplicates to a new GeoJSON file.')
 
@@ -30,13 +70,8 @@ args = parser.parse_args()
 print('Sorting lines from', args.input, '...', file=sys.stderr)
 sorter = subprocess.Popen(['sort', '-k', '1,20', args.input], stdout=subprocess.PIPE)
 lines = (line.split(' ', 1) for line in io.TextIOWrapper(sorter.stdout))
-graph = networkx.Graph()
-hash_addresses = dict()
-
-count = 0
 
 for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
-    count += 1
     #print('.', sep='', end='', file=sys.stderr)
 
     key_addresses = list()
@@ -47,16 +82,32 @@ for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
         except:
             pass
         else:
-            graph.add_node(addr.hash)
-            hash_addresses[addr.hash] = addr
             key_addresses.append(addr)
+            try:
+                db.execute('insert into addrs (hash, args_list) values (?, ?)',
+                           (addr.hash, addr_args))
+            except sqlite3.IntegrityError:
+                pass
+            else:
+                print('insert addrs', (addr.hash))
     
     for (addr1, addr2) in itertools.combinations(key_addresses, 2):
-        if addr1.matches(addr2) and addr1.hash != addr2.hash:
-            graph.add_edge(addr1.hash, addr2.hash)
+        if addr1.matches(addr2):
+            hash1, hash2 = min(addr1.hash, addr2.hash), max(addr1.hash, addr2.hash)
+            try:
+                db.execute('insert into edges (hash1, hash2) values (?, ?)', (hash1, hash2))
+            except sqlite3.IntegrityError:
+                pass
+            else:
+                print('insert edges', (hash1, hash2))
 
 sorter.wait()
-print('-', count, 'address tiles.', file=sys.stderr)
+
+(count, ) = db.execute('select count(*) from addrs').fetchone()
+print('-', count, 'addresses.', file=sys.stderr)
+
+db.execute('''create index edge1 on edges (hash1)''')
+db.execute('''create index edge2 on edges (hash2)''')
 
 merged_count = 0
 
@@ -64,40 +115,30 @@ with open(args.output, 'w') as file:
     out = csv.DictWriter(file, ('NUMBER', 'STREET', 'UNIT', 'LAT', 'LON', 'OA:COUNT', 'OA:RADIUS'))
     out.writeheader()
     
-    for hash in graph.nodes():
-        if hash not in hash_addresses:
-            continue
-    
-        address = hash_addresses[hash]
-        neighbor_hashes = graph.neighbors(hash)
+    for address in iterate_addresses(db):
+        neighbors = load_neighbors(db, address.hash)
         longitude, latitude = address.lon, address.lat
         neighbor_count, neighbor_radius = 1, None
-    
-        if len(neighbor_hashes) > 0:
+        
+        if len(neighbors) > 0:
             # When there are matching nearby neighbors, record the center of
             # the identified point cluster and note count of duplicate points.
             xs, ys = [address.x], [address.y]
             lons, lats = [address.lon], [address.lat]
-            for (i, neighbor_hash) in zip(itertools.count(2), neighbor_hashes):
-                neighbor = hash_addresses[neighbor_hash]
+            for (neighbor_hash, neighbor) in neighbors.items():
                 lons.append(neighbor.lon)
                 lats.append(neighbor.lat)
                 xs.append(neighbor.x)
                 ys.append(neighbor.y)
                 neighbor_count += 1
-                hash_addresses.pop(neighbor_hash)
-                graph.remove_node(neighbor_hash)
+                delete_address(db, neighbor_hash)
             longitude = statistics.mean(lons)
             latitude = statistics.mean(lats)
             x, y = statistics.mean(xs), statistics.mean(ys)
             hypots = [math.hypot(x - x1, y - y1) for (x1, y1) in zip(xs, ys)]
             neighbor_radius = int(statistics.mean(hypots))
     
-        try:
-            hash_addresses.pop(hash)
-            graph.remove_node(hash)
-        except KeyError:
-            pass
+        delete_address(db, address.hash)
         merged_count += 1
 
         out.writerow({
