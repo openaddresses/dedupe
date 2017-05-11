@@ -25,7 +25,6 @@ with open(args.input) as file:
 
     for (key, lines) in itertools.groupby(lines, key=operator.itemgetter(0)):
         count, filename = 0, os.path.join(dirname, 'addresses-{}.txt'.format(key))
-        print('file:', file, 'key:', key, 'filename:', filename, file=sys.stderr)
     
         with open(filename, 'a') as file:
             fcntl.flock(file, fcntl.LOCK_EX)

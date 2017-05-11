@@ -34,7 +34,7 @@ Advanced Usage
     $ apt-get install parallel
     $ ./split-areas.py > split-areas.txt
     $ parallel -a split-areas.txt ./address-areas.py --areas '{}' '{.}.txt'
-    $ parallel -a split-areas.txt cat '{.}.txt' | ./address-map.py > area-filenames.txt
+    $ parallel -a split-areas.txt  ./address-map.py '{.}.txt' | sort | uniq > area-filenames.txt
     $ parallel -a area-filenames.txt ./expand-reduce.py '{}' '{.}.csv'
 
 Sample Times
