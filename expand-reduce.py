@@ -52,7 +52,7 @@ for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
             key_addresses.append(addr)
     
     for (addr1, addr2) in itertools.combinations(key_addresses, 2):
-        if addr1.matches(addr2):
+        if addr1.matches(addr2) and addr1.hash != addr2.hash:
             graph.add_edge(addr1.hash, addr2.hash)
 
 sorter.wait()
