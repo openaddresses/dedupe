@@ -31,6 +31,7 @@ print('Sorting lines from', args.input, '...', file=sys.stderr)
 sorter = subprocess.Popen(['sort', '-k', '1,20', args.input], stdout=subprocess.PIPE)
 lines = (line.split(' ', 1) for line in io.TextIOWrapper(sorter.stdout))
 graph = networkx.Graph()
+hash_addresses = dict()
 
 count = 0
 
@@ -38,21 +39,23 @@ for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
     count += 1
     #print('.', sep='', end='', file=sys.stderr)
 
-    addresses = list()
+    key_addresses = list()
     for row in rows:
         try:
             _, addr_args = row
-            addresses.append(Address(*json.loads(addr_args)))
+            addr = Address(*json.loads(addr_args))
         except:
             pass
-            
-    for addr in addresses:
-        graph.add_node(addr.hash, {'address': addr})
+        else:
+            graph.add_node(addr.hash)
+            hash_addresses[addr.hash] = addr
+            key_addresses.append(addr)
     
-    for (addr1, addr2) in itertools.combinations(addresses, 2):
+    for (addr1, addr2) in itertools.combinations(key_addresses, 2):
         if addr1.matches(addr2):
             graph.add_edge(addr1.hash, addr2.hash)
 
+sorter.wait()
 print('-', count, 'address tiles.', file=sys.stderr)
 
 merged_count = 0
@@ -62,10 +65,10 @@ with open(args.output, 'w') as file:
     out.writeheader()
     
     for hash in graph.nodes():
-        if hash not in graph:
+        if hash not in hash_addresses:
             continue
     
-        address = graph.node[hash]['address']
+        address = hash_addresses[hash]
         neighbor_hashes = graph.neighbors(hash)
         longitude, latitude = address.lon, address.lat
         neighbor_count, neighbor_radius = 1, None
@@ -76,12 +79,13 @@ with open(args.output, 'w') as file:
             xs, ys = [address.x], [address.y]
             lons, lats = [address.lon], [address.lat]
             for (i, neighbor_hash) in zip(itertools.count(2), neighbor_hashes):
-                neighbor = graph.node[neighbor_hash]['address']
+                neighbor = hash_addresses[neighbor_hash]
                 lons.append(neighbor.lon)
                 lats.append(neighbor.lat)
                 xs.append(neighbor.x)
                 ys.append(neighbor.y)
                 neighbor_count += 1
+                hash_addresses.pop(neighbor_hash)
                 graph.remove_node(neighbor_hash)
             longitude = statistics.mean(lons)
             latitude = statistics.mean(lats)
@@ -90,9 +94,10 @@ with open(args.output, 'w') as file:
             neighbor_radius = int(statistics.mean(hypots))
     
         try:
+            hash_addresses.pop(hash)
             graph.remove_node(hash)
-        except networkx.exception.NetworkXError:
-            pass # Sometimes the node has already been removed?
+        except KeyError:
+            pass
         merged_count += 1
 
         out.writerow({
