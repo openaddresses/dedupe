@@ -15,7 +15,7 @@ counts and average point cluster radius in web mercator meters.
 Certain U.S.-specific street name tokens like "Av"/"Ave"/"Avenue", "E"/"East",
 or "2nd"/"Second" are treated as identical to maximize matches.
 '''
-import argparse, itertools, pprint, re, json, hashlib, \
+import argparse, itertools, pprint, re, json, hashlib, datetime, \
     sys, operator, subprocess, io, math, statistics, csv, sqlite3
 
 from expand import Address
@@ -56,6 +56,27 @@ def delete_address(db, hash):
     '''
     db.execute('delete from addrs where hash = ?', (hash, ))
 
+def add_address(db, hash, args_list):
+    '''
+    '''
+    try:
+        db.execute('insert into addrs (hash, args_list) values (?, ?)',
+                   (hash, args_list))
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        pass # print('insert addrs', (hash))
+
+def add_edge(db, hash1, hash2):
+    '''
+    '''
+    try:
+        db.execute('insert into edges (hash1, hash2) values (?, ?)', (hash1, hash2))
+    except sqlite3.IntegrityError:
+        pass
+    else:
+        pass # print('insert edges', (hash1, hash2))
+
 db = sqlite3.connect(':memory:')
 db.execute('''create table addrs ( hash text, args_list text, primary key (hash) )''')
 db.execute('''create table edges ( hash1 text, hash2 text, primary key (hash1, hash2) )''')
@@ -67,6 +88,7 @@ parser.add_argument('output', help='CSV file for deduped addresses.')
 
 args = parser.parse_args()
 
+start = datetime.datetime.now()
 print('Sorting lines from', args.input, '...', file=sys.stderr)
 sorter = subprocess.Popen(['sort', '-k', '1,20', args.input], stdout=subprocess.PIPE)
 lines = (line.split(' ', 1) for line in io.TextIOWrapper(sorter.stdout))
@@ -83,31 +105,20 @@ for (key, rows) in itertools.groupby(lines, key=operator.itemgetter(0)):
             pass
         else:
             key_addresses.append(addr)
-            try:
-                db.execute('insert into addrs (hash, args_list) values (?, ?)',
-                           (addr.hash, addr_args))
-            except sqlite3.IntegrityError:
-                pass
-            else:
-                print('insert addrs', (addr.hash))
+            add_address(db, addr.hash, addr_args)
     
     for (addr1, addr2) in itertools.combinations(key_addresses, 2):
         if addr1.matches(addr2):
-            hash1, hash2 = min(addr1.hash, addr2.hash), max(addr1.hash, addr2.hash)
-            try:
-                db.execute('insert into edges (hash1, hash2) values (?, ?)', (hash1, hash2))
-            except sqlite3.IntegrityError:
-                pass
-            else:
-                print('insert edges', (hash1, hash2))
+            add_edge(db, min(addr1.hash, addr2.hash), max(addr1.hash, addr2.hash))
 
 sorter.wait()
 
 (count, ) = db.execute('select count(*) from addrs').fetchone()
-print('-', count, 'addresses.', file=sys.stderr)
+print('-', count, 'addresses at', (datetime.datetime.now() - start), file=sys.stderr)
 
 db.execute('''create index edge1 on edges (hash1)''')
 db.execute('''create index edge2 on edges (hash2)''')
+print('Indexed edges at', (datetime.datetime.now() - start), file=sys.stderr)
 
 merged_count = 0
 
@@ -151,7 +162,7 @@ with open(args.output, 'w') as file:
             'OA:RADIUS': neighbor_radius,
             })
 
-    print(merged_count, 'merged addresses.', file=sys.stderr)
+    print(merged_count, 'merged addresses at', (datetime.datetime.now() - start), file=sys.stderr)
 
 if __name__ == '__main__':
     import doctest
