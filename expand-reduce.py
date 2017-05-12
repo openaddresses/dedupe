@@ -60,7 +60,7 @@ def add_address(db, hash, args_list):
     '''
     '''
     try:
-        db.execute('insert into addrs (hash, args_list) values (?, ?)',
+        db.execute('insert into raw_addrs (hash, args_list) values (?, ?)',
                    (hash, args_list))
     except sqlite3.IntegrityError:
         pass
@@ -78,8 +78,9 @@ def add_edge(db, hash1, hash2):
         pass # print('insert edges', (hash1, hash2))
 
 db = sqlite3.connect(':memory:')
-db.execute('''create table addrs ( hash text, args_list text, primary key (hash) )''')
-db.execute('''create table edges ( hash1 text, hash2 text, primary key (hash1, hash2) )''')
+db.execute('create table raw_addrs ( hash text, args_list text )')
+db.execute('create table addrs ( hash text, args_list text, primary key (hash) )')
+db.execute('create table edges ( hash1 text, hash2 text, primary key (hash1, hash2) )')
 
 parser = argparse.ArgumentParser(description='Reduce mapped OpenAddresses duplicates to a new GeoJSON file.')
 
@@ -116,8 +117,9 @@ sorter.wait()
 (count, ) = db.execute('select count(*) from addrs').fetchone()
 print('-', count, 'addresses at', (datetime.datetime.now() - start), file=sys.stderr)
 
-db.execute('''create index edge1 on edges (hash1)''')
-db.execute('''create index edge2 on edges (hash2)''')
+db.execute('insert into addrs select distinct hash, args_list from raw_addrs')
+db.execute('create index edge1 on edges (hash1)')
+db.execute('create index edge2 on edges (hash2)')
 print('Indexed edges at', (datetime.datetime.now() - start), file=sys.stderr)
 
 merged_count = 0
